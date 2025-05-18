@@ -1,35 +1,18 @@
-"""1. Coleta de Métricas
-Você pode obter as métricas relevantes a partir de arquivos no diretório /proc:
-
-Uso de CPU: O arquivo /proc/[pid]/stat contém o tempo de uso da CPU do processo.
-
-Chamadas de Sistema: Também pode ser extraído de /proc/[pid]/stat, já que as informações de chamadas de sistema também estão presentes lá.
-
-Atividade de E/S: O arquivo /proc/[pid]/io fornece estatísticas de entrada e saída para o processo.
-
-Tráfego de Rede (opcional): Pode ser coletado a partir de /proc/net/dev ou outras ferramentas de monitoramento de rede.
+/*
+1. Coleta de Métricas
+- Uso de CPU: obtido de `task->utime` e `task->stime`.
+- Atividade de E/S: removido por falta de acesso direto no kernel.
 
 2. Definição do Algoritmo de Pontuação
-A pontuação de risco pode ser baseada em faixas para cada métrica:
-
-CPU: Um processo que usa mais de 80% da CPU por um período contínuo pode ser considerado de risco Alto.
-
-Chamadas de Sistema: Se o número de chamadas de sistema por segundo exceder um certo limiar, pode indicar comportamento anômalo (ex: Médio ou Alto).
-
-Atividade de E/S: Se o processo estiver realizando operações de leitura/escrita intensivas, pode ser classificado como Médio ou Alto dependendo da quantidade de dados movidos.
-
-Tráfego de Rede: Processos com tráfego de rede anormalmente alto (se você decidir incluir) podem ser identificados como de alto risco.
+- CPU: baseia-se no tempo total de CPU consumido pelo processo.
 
 3. Classificação
-Com base nessas métricas, o risco pode ser classificado de forma simples:
-
-Baixo: Se as métricas estão dentro dos limites normais ou esperados.
-
-Médio: Se uma ou mais métricas estão acima dos limites aceitáveis, mas não de forma alarmante.
-
-Alto: Se uma ou mais métricas excederem significativamente os limites estabelecidos, indicando comportamento anômalo ou agressivo."""
+- Baixo, Médio ou Alto risco com base em thresholds definidos.
 
 
+
+
+*/
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -38,83 +21,113 @@ Alto: Se uma ou mais métricas excederem significativamente os limites estabelec
 #include <linux/uaccess.h>
 #include <linux/sched.h>
 #include <linux/seq_file.h>
+#include <linux/pid.h>
 
 #define PROC_DIR_NAME "process_risk"
 #define PROC_FILE_NAME "risk_score"
 
-// Função que calcula a pontuação de risco com base nas métricas
+#define COLOR_RESET  "\033[0m"
+#define COLOR_GREEN  "\033[32m"
+#define COLOR_YELLOW "\033[33m"
+#define COLOR_RED    "\033[31m"
+
+static struct proc_dir_entry *proc_dir;
+static struct proc_dir_entry *proc_file;
+
+static pid_t target_pid = -1;
+
+// Avalia risco com base no tempo de CPU
 static int calculate_risk(struct task_struct *task) {
-    unsigned long cpu_time = task->utime + task->stime; // Tempo de CPU usado
-    unsigned long io_read = task->io_counters.read_bytes; // Bytes lidos de E/S
-    unsigned long io_write = task->io_counters.write_bytes; // Bytes escritos de E/S
+    unsigned long cpu_time = task->utime + task->stime;
+    unsigned long cpu_threshold = 100000;
 
-    // Definir limites para classificação de risco
-    unsigned long cpu_threshold = 100000; // Limite de tempo de CPU para risco
-    unsigned long io_threshold = 50000; // Limite de E/S para risco
-
-    // Verificar condições para risco
-    if (cpu_time > cpu_threshold || (io_read + io_write) > io_threshold) {
-        return 3; // Risco Alto
-    } else if (cpu_time > cpu_threshold / 2 || (io_read + io_write) > io_threshold / 2) {
-        return 2; // Risco Médio
-    } else {
-        return 1; // Risco Baixo
-    }
+    if (cpu_time > cpu_threshold)
+        return 3; // Alto
+    else if (cpu_time > cpu_threshold / 2)
+        return 2; // Médio
+    else
+        return 1; // Baixo
 }
 
-// Função para mostrar a pontuação de risco do processo
+// Leitura do /proc
 static ssize_t risk_score_read(struct file *file, char __user *buf, size_t count, loff_t *pos) {
-    struct task_struct *task;
     char result[128];
     int len = 0;
+    struct task_struct *task;
+    struct pid *pid_struct;
     int risk_score;
 
-    // Obter o processo atual (se você quiser fazer para outros processos, seria necessário passar o PID)
-    task = current;
+    if (*pos > 0)
+        return 0;
 
-    // Calcular o risco
+    if (target_pid <= 0)
+        return simple_read_from_buffer(buf, count, pos, "No PID set. Use echo <pid> > /proc/process_risk/risk_score\n", 58);
+
+    pid_struct = find_get_pid(target_pid);
+    task = pid_task(pid_struct, PIDTYPE_PID);
+
+    if (!task) {
+        len = snprintf(result, sizeof(result), "PID %d not found\n", target_pid);
+        return simple_read_from_buffer(buf, count, pos, result, len);
+    }
+
     risk_score = calculate_risk(task);
 
-    // Converter a pontuação de risco para uma string
     switch (risk_score) {
         case 1:
-            len = snprintf(result, sizeof(result), "Risk: Low\n");
+            len = snprintf(result, sizeof(result), COLOR_GREEN "PID %d - Risk: Low\n" COLOR_RESET, target_pid);
             break;
         case 2:
-            len = snprintf(result, sizeof(result), "Risk: Medium\n");
+            len = snprintf(result, sizeof(result), COLOR_YELLOW "PID %d - Risk: Medium\n" COLOR_RESET, target_pid);
             break;
         case 3:
-            len = snprintf(result, sizeof(result), "Risk: High\n");
+            len = snprintf(result, sizeof(result), COLOR_RED "PID %d - Risk: High\n" COLOR_RESET, target_pid);
             break;
         default:
-            len = snprintf(result, sizeof(result), "Risk: Unknown\n");
+            len = snprintf(result, sizeof(result), "PID %d - Risk: Unknown\n", target_pid);
             break;
     }
 
-    // Retornar a string com o risco
     return simple_read_from_buffer(buf, count, pos, result, len);
 }
 
-// Definindo as operações do arquivo
-static const struct file_operations risk_score_fops = {
-    .owner = THIS_MODULE,
-    .read = risk_score_read,
+// Escrita no /proc: define qual PID avaliar
+static ssize_t risk_score_write(struct file *file, const char __user *buffer, size_t len, loff_t *pos) {
+    char input[16];
+
+    if (len == 0 || len >= sizeof(input))
+        return -EINVAL;
+
+    if (copy_from_user(input, buffer, len))
+        return -EFAULT;
+
+    input[len] = '\0';  // garante terminação da string
+
+    if (kstrtoint(strim(input), 10, &target_pid) != 0)
+        return -EINVAL;
+
+    printk(KERN_INFO "PID recebido: %d\n", target_pid);
+    return len;
+}
+
+// Interface para o /proc
+static const struct proc_ops risk_score_ops = {
+    .proc_read = risk_score_read,
+    .proc_write = risk_score_write,
 };
 
 // Inicialização do módulo
 static int __init risk_module_init(void) {
-    struct proc_dir_entry *proc_dir;
-
-    // Criar o diretório /proc/process_risk
     proc_dir = proc_mkdir(PROC_DIR_NAME, NULL);
     if (!proc_dir) {
-        printk(KERN_ERR "Failed to create /proc directory\n");
+        printk(KERN_ERR "Failed to create /proc/%s\n", PROC_DIR_NAME);
         return -ENOMEM;
     }
 
-    // Criar o arquivo /proc/process_risk/risk_score
-    if (!proc_create(PROC_FILE_NAME, 0, proc_dir, &risk_score_fops)) {
-        printk(KERN_ERR "Failed to create /proc file\n");
+    proc_file = proc_create(PROC_FILE_NAME, 0666, proc_dir, &risk_score_ops);
+    if (!proc_file) {
+        printk(KERN_ERR "Failed to create /proc/%s/%s\n", PROC_DIR_NAME, PROC_FILE_NAME);
+        remove_proc_entry(PROC_DIR_NAME, NULL);
         return -ENOMEM;
     }
 
@@ -122,13 +135,10 @@ static int __init risk_module_init(void) {
     return 0;
 }
 
-// Saída do módulo
+// Finalização do módulo
 static void __exit risk_module_exit(void) {
-    // Remover o arquivo /proc/process_risk/risk_score
-    remove_proc_entry(PROC_FILE_NAME, NULL);
-    // Remover o diretório /proc/process_risk
+    remove_proc_entry(PROC_FILE_NAME, proc_dir);
     remove_proc_entry(PROC_DIR_NAME, NULL);
-
     printk(KERN_INFO "Risk score module unloaded\n");
 }
 
@@ -136,4 +146,5 @@ module_init(risk_module_init);
 module_exit(risk_module_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Módulo de Avaliação de Risco de Processos");
+MODULE_AUTHOR("Seu Nome");
+MODULE_DESCRIPTION("Módulo de Avaliação de Risco baseado em tempo de CPU com seleção de PID");
