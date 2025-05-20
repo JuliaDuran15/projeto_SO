@@ -8,6 +8,8 @@ clean:
 #sudo insmod kfetch_module.ko
 #sudo insmod risk_module.ko
 #ls /dev/kfetch
+#echo "KERNEL|MEM" | sudo tee /dev/kfetch (ou substituir com oq vc deseja ver)
+#caso quira ver todos-> echo "KERNEL|MEM" | sudo tee /dev/kfetch
 #cat /dev/kfetch (se permissao negada inserir sudo no inicio)
 #cat /proc/process_risk/risk_score
 
