@@ -2,7 +2,7 @@
 
 Este projeto contém dois módulos de kernel desenvolvidos para Linux:
 
-- **`kfetch_module`**: Imita o comportamento de ferramentas como `neofetch`, exibindo informações do sistema no dispositivo `/dev/kfetch`.
+- **`kfetch_module`**: Exibe informações do sistema no dispositivo `/dev/kfetch`.
 - **`risk_module`**: Avalia o risco de um processo específico com base no tempo de uso da CPU. A interação é feita via `/proc/process_risk/risk_score`.
 
 ---
@@ -57,11 +57,11 @@ Uptime: 84 minutos
 Proc: 345
 ```
 
-Modificar máscara (opcional): Você pode definir quais informações deseja visualizar utilizando uma máscara binária.
+Modificar máscara (opcional): Você pode filtrar quais informações deseja visualizar enviando uma string com as chaves separadas por pipe (|):
 
 Exemplo: mostrar apenas Kernel e Memória
 ```bash
-echo 9 | sudo tee /dev/kfetch  # 9 = 0b01001 (KERNEL + MEM)
+echo "KERNEL|MEM" | sudo tee /dev/kfetch  # 9 = 0b01001 (KERNEL + MEM)
 ```
 
 ## 📕 risk_module
@@ -75,6 +75,7 @@ Setar PID a ser avaliado:
 ```bash
 echo 1234 | sudo tee /proc/process_risk/risk_score
 ```
+(Substitua 1234 pelo PID do processo desejado)
 
 Ler risco:
 ```bash
