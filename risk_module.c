@@ -1,15 +1,20 @@
 /*
 1. Coleta de Métricas
-- Uso de CPU: obtido de `task->utime` e `task->stime`.
-- Atividade de E/S: removido por falta de acesso direto no kernel.
+O módulo busca os seguintes dados do processo no kernel (através da estrutura task_struct):
+
+    utime e stime: tempo total de CPU em jiffies usado no modo usuário e kernel.
+
+    nvcsw e nivcsw: número de trocas de contexto voluntárias e involuntárias.
+
+    ioac.read_bytes e ioac.write_bytes (se o kernel estiver configurado com CONFIG_TASK_IO_ACCOUNTING): total de bytes lidos e escritos em disco.
 
 2. Definição do Algoritmo de Pontuação
+Usa thresholds e pesos para balancear a importância das métricas.
+Limita os valores normalizados a 1000 (escala de 0 a 1 mil).
 - CPU: baseia-se no tempo total de CPU consumido pelo processo.
 
 3. Classificação
 - Baixo, Médio ou Alto risco com base em thresholds definidos.
-
-
 
 
 */
@@ -23,6 +28,7 @@
 #include <linux/seq_file.h>
 #include <linux/pid.h>
 
+
 #define PROC_DIR_NAME "process_risk"
 #define PROC_FILE_NAME "risk_score"
 
@@ -31,23 +37,64 @@
 #define COLOR_YELLOW "\033[33m"
 #define COLOR_RED    "\033[31m"
 
+#define CPU_TIME_THRESHOLD 100000
+#define NVCSW_THRESHOLD 1000
+#define NIVCSW_THRESHOLD 1000
+#define IO_BYTES_THRESHOLD 1000000
+
+#define CPU_WEIGHT_MIL      500
+#define SYS_CALL_WEIGHT_MIL 300
+#define IO_WEIGHT_MIL       200
+
+
 static struct proc_dir_entry *proc_dir;
 static struct proc_dir_entry *proc_file;
 
 static pid_t target_pid = -1;
 
-// Avalia risco com base no tempo de CPU
-static int calculate_risk(struct task_struct *task) {
-    unsigned long cpu_time = task->utime + task->stime;
-    unsigned long cpu_threshold = 100000;
 
-    if (cpu_time > cpu_threshold)
-        return 3; // Alto
-    else if (cpu_time > cpu_threshold / 2)
-        return 2; // Médio
+// Função que calcula o risco baseado em CPU, chamadas de sistema e I/O
+static int calculate_risk_enhanced(struct task_struct *task) {
+    // Soma de tempo CPU (jiffies)
+    unsigned long cpu_time = task->utime + task->stime;
+
+    // Trocas de contexto voluntárias e involuntárias
+    unsigned long nvcsw = task->nvcsw;
+    unsigned long nivcsw = task->nivcsw;
+
+    // Bytes I/O (se disponível)
+    u64 read_bytes = 0;
+    u64 write_bytes = 0;
+#ifdef CONFIG_TASK_IO_ACCOUNTING
+    read_bytes = task->ioac.read_bytes;
+    write_bytes = task->ioac.write_bytes;
+#endif
+    u64 total_io_bytes = read_bytes + write_bytes;
+
+    // Normalizações para escala de 0 a 1000 (mil)
+    unsigned long cpu_norm = (cpu_time * 1000) / CPU_TIME_THRESHOLD;
+    if (cpu_norm > 1000) cpu_norm = 1000;
+
+    unsigned long sys_calls_norm = ((nvcsw + nivcsw) * 1000) / (NVCSW_THRESHOLD + NIVCSW_THRESHOLD);
+    if (sys_calls_norm > 1000) sys_calls_norm = 1000;
+
+    unsigned long io_norm = (total_io_bytes * 1000) / IO_BYTES_THRESHOLD;
+    if (io_norm > 1000) io_norm = 1000;
+
+    // Cálculo ponderado do score total (peso para cada métrica)
+    unsigned long score_mil = (cpu_norm * CPU_WEIGHT_MIL
+                            + sys_calls_norm * SYS_CALL_WEIGHT_MIL
+                            + io_norm * IO_WEIGHT_MIL) / 1000;
+
+    // Classificação final em níveis
+    if (score_mil > 750)
+        return 3; // Alto risco
+    else if (score_mil > 400)
+        return 2; // Médio risco
     else
-        return 1; // Baixo
+        return 1; // Baixo risco
 }
+
 
 // Leitura do /proc
 static ssize_t risk_score_read(struct file *file, char __user *buf, size_t count, loff_t *pos) {
@@ -71,7 +118,7 @@ static ssize_t risk_score_read(struct file *file, char __user *buf, size_t count
         return simple_read_from_buffer(buf, count, pos, result, len);
     }
 
-    risk_score = calculate_risk(task);
+    risk_score = calculate_risk_enhanced(task);
 
     switch (risk_score) {
         case 1:
