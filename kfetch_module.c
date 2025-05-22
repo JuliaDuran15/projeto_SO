@@ -55,6 +55,8 @@ static struct file_operations fops = {
     .write = kfetch_write,
 };
 
+
+
 // Funções para obter as informações do sistema
 
 static char *get_hostname(void) {
@@ -77,7 +79,9 @@ static char *get_memory_info(void) {
     static char mem_buf[64];
     struct sysinfo si;
     si_meminfo(&si);
-    snprintf(mem_buf, sizeof(mem_buf), "%lu / %lu MB", si.freeram / 1024 / 1024, si.totalram / 1024 / 1024);
+    snprintf(mem_buf, sizeof(mem_buf), "%lu / %lu MB", 
+    (si.freeram * PAGE_SIZE) / 1024 / 1024, 
+    (si.totalram * PAGE_SIZE) / 1024 / 1024);
     return mem_buf;
 }
 
@@ -90,6 +94,7 @@ static char *get_process_count(void) {
         count++;
     }
 
+        
     snprintf(proc_buf, sizeof(proc_buf), "%d", count);
     return proc_buf;
 }
