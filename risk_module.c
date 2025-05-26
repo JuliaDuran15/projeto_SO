@@ -1,56 +1,60 @@
-/*O cálculo de risco para cada critério é feito usando a normalização, onde os valores são convertidos para uma escala de 0 a 1000, e esses valores são ponderados de acordo com a sua importância no cálculo final. Vamos detalhar cada critério.
-1. CPU (20%):
+/*O cálculo de risco para cada processo é realizado através da normalização de métricas extraídas do kernel, convertendo-as para uma escala de 0 a 1000. Esses valores normalizados são então ponderados de acordo com seu impacto no score final. Abaixo, detalhamos cada critério e seu peso real no cálculo final de risco.
+1. Uso de CPU (30%)
 
-    Cálculo: O tempo de CPU utilizado pelo processo é obtido somando os tempos de CPU no modo usuário (utime) e no modo kernel (stime), que são valores armazenados na estrutura task_struct. A soma desses tempos (cpu_time) é então normalizada em relação a um valor de referência (CPU_TIME_THRESHOLD).
+    Cálculo: O tempo de CPU é obtido somando os tempos no modo usuário (utime) e no modo kernel (stime), ambos presentes na estrutura task_struct.
 
-    Normalização: O valor é normalizado dividindo o tempo de CPU consumido pelo processo por um limite de referência, que é o CPU_TIME_THRESHOLD. Isso gera um valor na faixa de 0 a 1000.
+    Normalização: O valor é dividido por um limite de referência (CPU_TIME_THRESHOLD) e multiplicado por 1000. Se o valor exceder 1000, é limitado.
 
-        Se o valor de cpu_norm for maior que 1000, ele é limitado a 1000 (máximo).
+    Interpretação: Quanto maior o uso de CPU, maior o risco. Este é o critério de maior peso na análise final.
 
-    Classificação: Se o valor normalizado de CPU exceder um limite, o processo é considerado de alto risco. Caso contrário, ele é ponderado junto aos outros critérios.
+2. Chamadas de Sistema (18%)
 
-2. Trocas de Contexto (nvcsw e nivcsw) (10%):
+    Cálculo: Soma das trocas de contexto voluntárias (nvcsw) e involuntárias (nivcsw) extraídas de task_struct.
 
-    Cálculo: As trocas de contexto voluntárias (nvcsw) e involuntárias (nivcsw) são extraídas da estrutura task_struct para cada processo.
+    Normalização: O total é comparado a um limite (soma de NVCSW_THRESHOLD e NIVCSW_THRESHOLD), resultando em uma pontuação de 0 a 1000, com limite superior de 1000.
 
-        Voluntárias (nvcsw): Indicam quantas vezes o processo voluntariamente cedeu a CPU para outro processo.
+    Interpretação: Muitos context switches podem indicar comportamento incomum ou carga elevada.
 
-        Involuntárias (nivcsw): Indicam quantas vezes o processo foi interrompido pela política de escalonamento do kernel.
+3. Operações de I/O (12%)
 
-    Normalização: O número total de trocas de contexto (soma de nvcsw e nivcsw) é normalizado com base em um limite de referência (NVCSW_THRESHOLD + NIVCSW_THRESHOLD), de modo que valores maiores recebem uma pontuação mais alta.
+    Cálculo: Soma dos bytes lidos (read_bytes) e escritos (write_bytes) em disco.
 
-        O valor é normalizado para a faixa de 0 a 1000, e valores superiores a 1000 são limitados.
+    Normalização: Dividido pelo IO_BYTES_THRESHOLD e limitado a 1000.
 
-3. Leitura e Escrita em Disco (15%):
+    Interpretação: Processos que fazem leituras/escritas intensivas em disco podem ser suspeitos, dependendo do contexto.
 
-    Cálculo: O número total de bytes lidos (read_bytes) e escritos (write_bytes) em disco é recuperado da estrutura task_struct (se a configuração do kernel permitir, como CONFIG_TASK_IO_ACCOUNTING).
+4. Atividades de Rede (15%)
 
-    Normalização: A soma dos bytes lidos e escritos é somada e normalizada em relação a um limite de referência (IO_BYTES_THRESHOLD), gerando um valor na faixa de 0 a 1000. Se o valor exceder 1000, ele é limitado.
+    Cálculo: Verifica se o processo possui algum socket aberto, analisando os descritores de arquivos.
 
-4. Rede (25%):
+    Normalização: Se houver ao menos um socket, a pontuação é 1000. Caso contrário, é 0.
 
-    Cálculo: O critério de rede verifica se o processo tem sockets abertos. A função has_open_socket percorre os descritores de arquivos do processo e verifica se algum deles é um socket.
+    Interpretação: A presença de sockets pode indicar comunicação ativa, o que aumenta o risco em certos contextos.
 
-    Normalização: Se o processo tiver ao menos um socket, ele recebe uma pontuação de 1000. Caso contrário, a pontuação é 0.
+5. Privilégios Elevados (12%)
 
-5. Privilégios (20%):
+    Cálculo: Verifica se o processo está executando como root (UID 0), usando o campo task->cred->uid.val.
 
-    Cálculo: O critério de privilégios verifica se o processo está sendo executado como root (UID 0). O campo task->cred->uid.val é utilizado para verificar se o UID do processo é 0.
+    Normalização: UID 0 recebe 1000 pontos; outros valores recebem 0.
 
-    Normalização: Se o processo for root (UID 0), ele recebe uma pontuação de 1000. Caso contrário, a pontuação é 0.
+    Interpretação: Processos com privilégios de root têm maior capacidade de causar danos ao sistema.
 
-6. Uptime (10%):
+6. Uptime (6%)
 
-    Cálculo: O tempo de vida do processo desde que ele foi iniciado é calculado a partir do campo task->start_time, comparado com o tempo atual do sistema obtido a partir da função ktime_get_boottime.
+    Cálculo: Tempo de vida do processo, baseado em task->start_time e o tempo atual do sistema (ktime_get_boottime).
 
-    Normalização: O uptime do processo é normalizado com base no tempo de vida de 1000 segundos. Se o tempo de vida for superior a 1000 segundos, ele recebe a pontuação máxima de 1000.
+    Normalização: Tempo até 1000 segundos é convertido proporcionalmente até 1000. Acima disso, recebe 1000.
 
-7. Origem Suspeita (10%):
+    Interpretação: Processos recém-criados são mais suspeitos, enquanto os antigos são considerados mais confiáveis.
 
-    Cálculo: O critério de origem suspeita verifica se o caminho do executável do processo está localizado fora dos diretórios tradicionais (/usr ou /bin). A função get_exe_path é usada para obter o caminho do executável.
+7. Caminho do Executável Suspeito (6%)
 
-    Normalização: Se o caminho do executável estiver fora de /usr ou /bin, ele recebe uma pontuação de 1000 (considerado suspeito).
+    Cálculo: Através da função get_exe_path, obtém-se o caminho do executável. Se estiver fora de /usr ou /bin, é considerado incomum.
 
+    Normalização: Caminhos suspeitos recebem 1000 pontos; os demais, 0.
+
+    Interpretação: Executáveis em diretórios não convencionais podem ser indícios de comportamento malicioso.
+    
 Pontuação Final:
 
 A pontuação final é calculada a partir da média ponderada das métricas normalizadas. 
