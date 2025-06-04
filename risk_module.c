@@ -333,7 +333,7 @@ module_init(risk_module_init);
 module_exit(risk_module_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Seu Nome");
+MODULE_AUTHOR("mudei");
 MODULE_DESCRIPTION("Módulo de Avaliação de Risco baseado em tempo de CPU com seleção de PID");
 
 
