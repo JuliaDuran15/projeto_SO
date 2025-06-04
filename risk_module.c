@@ -337,35 +337,3 @@ MODULE_AUTHOR("Seu Nome");
 MODULE_DESCRIPTION("Módulo de Avaliação de Risco baseado em tempo de CPU com seleção de PID");
 
 
-/*#include <linux/module.h>: Importa as funções e macros necessárias para definir o módulo do kernel. Ele permite carregar e descarregar módulos no kernel.
-
-#include <linux/kernel.h>: Oferece funções e definições essenciais para o funcionamento do kernel, como funções de log (pr_info para imprimir mensagens de log).
-
-#include <linux/init.h>: Necessário para as macros module_init e module_exit, que indicam as funções a serem chamadas quando o módulo é carregado ou descarregado.
-
-#include <linux/fs.h>: Importa as estruturas e funções relacionadas ao gerenciamento de arquivos. A estrutura files_struct está definida aqui, usada para manipular os descritores de arquivos de um processo.
-
-#include <linux/file.h> e #include <linux/fdtable.h>: Usados para manipular e acessar a tabela de arquivos (fdtable) e os descritores de arquivos associados aos processos. A função files_fdtable está definida em fdtable.h.
-
-#include <linux/proc_fs.h>: Fornece a interface para criar arquivos em /proc, o que permite interagir com o sistema de arquivos proc. Isso será usado para criar a interface de leitura e escrita no /proc para exibir o risco do processo.
-
-#include <linux/uaccess.h>: Necessário para realizar operações de leitura e escrita entre o espaço de usuário e o espaço do kernel.
-
-#include <linux/sched.h>: Contém as funções e estruturas necessárias para interagir com o escalonador de processos do kernel, incluindo a estrutura task_struct, que armazena informações sobre cada processo.
-
-#include <linux/seq_file.h>: Usado para criar arquivos seq (sequenciais), que são ideais para leitura de dados estruturados, como a exposição dos resultados no /proc.
-
-#include <linux/pid.h>: Usado para manipulação de PIDs (IDs de processos), necessário para identificar e acessar os processos no sistema.
-
-#define PROC_DIR_NAME "process_risk" e #define PROC_FILE_NAME "risk_score": Define os nomes do diretório e do arquivo que serão criados no /proc. O diretório será /proc/process_risk, e o arquivo dentro dele será /proc/process_risk/risk_score.
-
-#define CPU_TIME_THRESHOLD 100000: Define um limiar de tempo de CPU (em jiffies) acima do qual o processo será considerado de risco maior em relação ao uso de CPU.
-
-#define NVCSW_THRESHOLD 1000 e #define NIVCSW_THRESHOLD 1000: Definem os limites para as trocas de contexto voluntárias (nvcsw) e involuntárias (nivcsw). Esses limites são usados para determinar se um processo teve muitas trocas de contexto, o que pode indicar um comportamento anômalo.
-
-#define IO_BYTES_THRESHOLD 1000000: Define um limite para o número total de bytes lidos e escritos em disco. Isso é usado para classificar o processo como de maior risco se ele estiver fazendo muitas operações de I/O.
-
-Pesos das métricas:
-
-    CPU_WEIGHT_MIL, SYS_CALL_WEIGHT_MIL, IO_WEIGHT_MIL: Esses pesos são atribuídos a cada critério (CPU, chamadas de sistema e I/O) ao calcular a pontuação total. Eles determinam a importância relativa de cada critério na pontuação final do risco.
-*/
