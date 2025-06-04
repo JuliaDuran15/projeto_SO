@@ -248,7 +248,7 @@ static ssize_t risk_score_read(struct file *file, char __user *buf, size_t count
         return 0;
 
     if (target_pid <= 0)
-        return simple_read_from_buffer(buf, count, pos, "No PID set. Use echo <pid> > /proc/process_risk/risk_score\n", 58);
+        return simple_read_from_buffer(buf, count, pos, "No PID set. Use echo <pid> > /proc/process_risk/risk_score\n", 60);
 
     pid_struct = find_get_pid(target_pid);
     task = pid_task(pid_struct, PIDTYPE_PID);
